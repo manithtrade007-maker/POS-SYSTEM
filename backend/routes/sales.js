@@ -1,69 +1,38 @@
 const express = require("express");
 const db = require("../database/db");
 
-
 const router = express.Router();
 
+function getCambodiaDate() {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Phnom_Penh",
+  });
+}
+
+function getCambodiaDateTime() {
+  return new Date().toLocaleString("sv-SE", {
+    timeZone: "Asia/Phnom_Penh",
+    hour12: false,
+  });
+}
 
 function generateInvoiceNo() {
-  const now = new Date();
-
-  const datePart = now.toISOString().slice(0, 10).replaceAll("-", "");
+  const datePart = getCambodiaDate().replaceAll("-", "");
 
   const count = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COUNT(*) AS total
       FROM sales
-      WHERE DATE(sale_date) = DATE('now')
-    `)
-    .get();
+      WHERE DATE(sale_date) = ?
+    `
+    )
+    .get(getCambodiaDate());
 
   const number = String(count.total + 1).padStart(4, "0");
 
   return `INV-${datePart}-${number}`;
 }
-
-
-// Get all sales / invoice history
-router.get("/", (req, res) => {
-  const sales = db
-    .prepare(`
-      SELECT *
-      FROM sales
-      ORDER BY sale_date DESC
-    `)
-    .all();
-
-  res.json(sales);
-});
-
-// Get invoice detail
-router.get("/:id", (req, res) => {
-  const sale = db
-    .prepare(`
-      SELECT *
-      FROM sales
-      WHERE id = ?
-    `)
-    .get(req.params.id);
-
-  if (!sale) {
-    return res.status(404).json({ message: "Sale not found" });
-  }
-
-  const items = db
-    .prepare(`
-      SELECT *
-      FROM sale_items
-      WHERE sale_id = ?
-    `)
-    .all(req.params.id);
-
-  res.json({
-    sale,
-    items,
-  });
-});
 
 // Create sale / invoice
 router.post("/", (req, res) => {
@@ -81,6 +50,7 @@ router.post("/", (req, res) => {
       let totalProfit = 0;
 
       const invoiceNo = generateInvoiceNo();
+      const saleDate = getCambodiaDateTime();
 
       const checkedItems = items.map((item) => {
         const { product_id, product_unit_id, quantity, price_type } = item;
@@ -119,23 +89,24 @@ router.post("/", (req, res) => {
           throw new Error(`Selling unit not found for product: ${product.name}`);
         }
 
-        const stockToDeduct = quantity * unit.conversion_qty;
+        const stockToDeduct = Number(quantity) * Number(unit.conversion_qty);
 
-        if (product.current_stock < stockToDeduct) {
+        if (Number(product.current_stock) < stockToDeduct) {
           throw new Error(
             `Not enough stock for ${product.name}. Available: ${product.current_stock} ${product.base_unit}`
           );
         }
 
         const unitPrice =
-          price_type === "retail" ? unit.retail_price : unit.wholesale_price;
+          price_type === "retail"
+            ? Number(unit.retail_price)
+            : Number(unit.wholesale_price);
 
-        const totalPrice = unitPrice * quantity;
-
+        const totalPrice = unitPrice * Number(quantity);
         const costPerSellingUnit =
-          product.cost_price_base * unit.conversion_qty;
+          Number(product.cost_price_base) * Number(unit.conversion_qty);
 
-        const profit = (unitPrice - costPerSellingUnit) * quantity;
+        const profit = (unitPrice - costPerSellingUnit) * Number(quantity);
 
         subtotal += totalPrice;
         totalProfit += profit;
@@ -143,7 +114,7 @@ router.post("/", (req, res) => {
         return {
           product,
           unit,
-          quantity,
+          quantity: Number(quantity),
           price_type,
           unitPrice,
           totalPrice,
@@ -152,28 +123,37 @@ router.post("/", (req, res) => {
         };
       });
 
-      const total = subtotal - discount;
+      const total = subtotal - Number(discount || 0);
 
       const saleResult = db
         .prepare(
           `
           INSERT INTO sales (
             invoice_no,
+            sale_date,
             subtotal,
             discount,
             total,
             payment_method,
             note
           )
-          VALUES (?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `
         )
-        .run(invoiceNo, subtotal, discount, total, payment_method, note);
+        .run(
+          invoiceNo,
+          saleDate,
+          subtotal,
+          Number(discount || 0),
+          total,
+          payment_method,
+          note
+        );
 
       const saleId = saleResult.lastInsertRowid;
 
       for (const item of checkedItems) {
-        const oldStock = item.product.current_stock;
+        const oldStock = Number(item.product.current_stock);
         const newStock = oldStock - item.stockToDeduct;
 
         db.prepare(
@@ -198,7 +178,7 @@ router.post("/", (req, res) => {
           item.quantity,
           item.price_type,
           item.unitPrice,
-          item.product.cost_price_base * item.unit.conversion_qty,
+          Number(item.product.cost_price_base) * Number(item.unit.conversion_qty),
           item.totalPrice,
           item.profit
         );
@@ -206,10 +186,10 @@ router.post("/", (req, res) => {
         db.prepare(
           `
           UPDATE products
-          SET current_stock = ?, updated_at = CURRENT_TIMESTAMP
+          SET current_stock = ?, updated_at = ?
           WHERE id = ?
         `
-        ).run(newStock, item.product.id);
+        ).run(newStock, saleDate, item.product.id);
 
         db.prepare(
           `
@@ -240,8 +220,9 @@ router.post("/", (req, res) => {
       return {
         sale_id: saleId,
         invoice_no: invoiceNo,
+        sale_date: saleDate,
         subtotal,
-        discount,
+        discount: Number(discount || 0),
         total,
         profit: totalProfit,
         payment_method,
@@ -259,6 +240,53 @@ router.post("/", (req, res) => {
       message: error.message,
     });
   }
+});
+
+// Get all sales / invoice history
+router.get("/", (req, res) => {
+  const sales = db
+    .prepare(
+      `
+      SELECT *
+      FROM sales
+      ORDER BY sale_date DESC
+    `
+    )
+    .all();
+
+  res.json(sales);
+});
+
+// Get invoice detail
+router.get("/:id", (req, res) => {
+  const sale = db
+    .prepare(
+      `
+      SELECT *
+      FROM sales
+      WHERE id = ?
+    `
+    )
+    .get(req.params.id);
+
+  if (!sale) {
+    return res.status(404).json({ message: "Sale not found" });
+  }
+
+  const items = db
+    .prepare(
+      `
+      SELECT *
+      FROM sale_items
+      WHERE sale_id = ?
+    `
+    )
+    .all(req.params.id);
+
+  res.json({
+    sale,
+    items,
+  });
 });
 
 module.exports = router;

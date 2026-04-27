@@ -172,29 +172,30 @@ router.put("/:id", (req, res) => {
 
   try {
     const transaction = db.transaction(() => {
-      db.prepare(`
-        UPDATE products
-SET
-  name = ?,
-  category = ?,
-  category_id = ?,
-  unit = ?,
-  base_unit = ?,
-  cost_price_base = ?,
-  current_stock = ?,
-  min_stock = ?,
-  updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-      `).run(
-        name,
-        category_id || null,
-        base_unit,
-        base_unit,
-        Number(cost_price_base || 0),
-        Number(current_stock || 0),
-        Number(min_stock || 0),
-        productId
-      );
+ db.prepare(`
+  UPDATE products
+  SET
+    name = ?,
+    category = ?,
+    category_id = ?,
+    unit = ?,
+    base_unit = ?,
+    cost_price_base = ?,
+    current_stock = ?,
+    min_stock = ?,
+    updated_at = CURRENT_TIMESTAMP
+  WHERE id = ?
+`).run(
+  name,
+  category || "beer",
+  category_id || null,
+  base_unit,
+  base_unit,
+  Number(cost_price_base || 0),
+  Number(current_stock || 0),
+  Number(min_stock || 0),
+  productId
+);
 
       // Soft-disable old units
       db.prepare(`

@@ -75,17 +75,17 @@ export default function Products() {
     const boxCost = boxSize ? product.cost_price_base * boxSize : "";
 
     setForm({
-      name: product.name || "",
-      category: product.category || "beer",
-      box_size: boxSize,
-      box_cost: boxCost,
-      wholesale_box_price: boxUnit?.wholesale_price || "",
-      stock_boxes: stockBoxes,
-      min_stock_boxes: minStockBoxes,
-      retail_unit_name: retailUnit?.unit_name || "",
-      retail_price_per_unit: retailUnit?.retail_price || "",
-    });
-
+  name: product.name || "",
+  category: product.category || "beer",
+  wholesale_unit_name: boxUnit?.unit_name || "",
+  box_size: boxSize,
+  box_cost: boxCost,
+  wholesale_box_price: boxUnit?.wholesale_price || "",
+  stock_boxes: stockBoxes,
+  min_stock_boxes: minStockBoxes,
+  retail_unit_name: retailUnit?.unit_name || "",
+  retail_price_per_unit: retailUnit?.retail_price || "",
+});
     setShowAddModal(true);
   }
 
@@ -110,19 +110,20 @@ export default function Products() {
     e.preventDefault();
 
     if (
-      !form.name ||
-      !form.wholesale_unit_name ||
-      !form.box_size ||
-      !form.box_cost ||
-      !form.wholesale_box_price ||
-      !form.stock_boxes ||
-      !form.min_stock_boxes ||
-      !form.retail_unit_name ||
-      !form.retail_price_per_unit
-    ) {
-      alert("Please fill all fields");
-      return;
-    }
+  !form.name ||
+  !form.category ||
+  !form.wholesale_unit_name ||
+  !form.box_size ||
+  !form.box_cost ||
+  !form.wholesale_box_price ||
+  !form.stock_boxes ||
+  !form.min_stock_boxes ||
+  !form.retail_unit_name ||
+  !form.retail_price_per_unit
+) {
+  alert("Please fill all fields");
+  return;
+}
 
     try {
       setSaving(true);
