@@ -738,90 +738,114 @@ export default function POS() {
           </div>
         ) : (
           <div className="max-h-[44vh] space-y-2 overflow-y-auto pr-1">
-            {cart.map((item, index) => (
-              <div
-                key={`${item.product_id}-${item.product_unit_id}-${item.price_type}`}
-                className="rounded-2xl border border-gray-200 p-3"
-              >
-                <div className="flex justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-gray-900">
-                      {item.name}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-black ${
-                          item.price_type === "wholesale"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-green-100 text-green-700"
-                        }`}
-                      >
-                        {priceTypeLabel(item.price_type)}
-                      </span>
-                      <span className="text-xs font-bold text-gray-500">
-                        {item.unit_name}
-                      </span>
+            {cart.map((item, index) => {
+              const lineTotal = Number(item.quantity) * Number(item.price);
+
+              return (
+                <div
+                  key={`${item.product_id}-${item.product_unit_id}-${item.price_type}`}
+                  className="rounded-2xl border border-gray-200 p-3"
+                >
+                  <div className="flex justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-gray-900">
+                        {item.name}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-black ${
+                            item.price_type === "wholesale"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-green-100 text-green-700"
+                          }`}
+                        >
+                          {priceTypeLabel(item.price_type)}
+                        </span>
+                        <span className="text-xs font-bold text-gray-500">
+                          {item.unit_name}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => removeItem(index)}
-                    className="h-fit rounded-lg px-2 py-1 text-xs font-black text-red-500 hover:bg-red-50"
-                  >
-                    លុប
-                  </button>
-                </div>
-
-                <div className="mt-3 grid grid-cols-[136px_minmax(0,1fr)] gap-2">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500">
-                      ចំនួន
-                    </label>
-                    <div className="mt-1 grid grid-cols-[32px_minmax(0,1fr)_32px] overflow-hidden rounded-xl border border-gray-200">
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-bold text-gray-400">
+                        សរុប
+                      </p>
+                      <p className="text-base font-black text-gray-950">
+                        {money(lineTotal)}
+                      </p>
                       <button
                         type="button"
-                        onClick={() => changeQty(index, -1)}
-                        disabled={Number(item.quantity) <= 1}
-                        className="bg-gray-50 text-lg font-black text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        onClick={() => removeItem(index)}
+                        className="mt-1 rounded-lg px-2 py-1 text-xs font-black text-red-500 hover:bg-red-50"
                       >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateQty(index, e.target.value)}
-                        className="w-full border-x border-gray-200 px-2 py-1.5 text-center font-bold text-gray-900 outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => changeQty(index, 1)}
-                        className="bg-gray-950 text-lg font-black text-white hover:bg-gray-800"
-                      >
-                        +
+                        លុប
                       </button>
                     </div>
                   </div>
 
-                  <div>
-                    <p className="text-xs font-bold text-gray-500">តម្លៃ</p>
-                    <div className="mt-1 rounded-xl bg-gray-50 px-3 py-2 font-black text-gray-900">
-                      {money(item.price)}
+                  <div className="mt-3 grid grid-cols-[136px_minmax(0,1fr)] gap-2">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500">
+                        ចំនួន
+                      </label>
+                      <div className="mt-1 grid grid-cols-[32px_minmax(0,1fr)_32px] overflow-hidden rounded-xl border border-gray-200">
+                        <button
+                          type="button"
+                          onClick={() => changeQty(index, -1)}
+                          disabled={Number(item.quantity) <= 1}
+                          className="bg-gray-50 text-lg font-black text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => updateQty(index, e.target.value)}
+                          className="w-full border-x border-gray-200 px-2 py-1.5 text-center font-bold text-gray-900 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => changeQty(index, 1)}
+                          className="bg-gray-950 text-lg font-black text-white hover:bg-gray-800"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold text-gray-500">
+                        តម្លៃមួយឯកតា
+                      </p>
+                      <div className="mt-1 rounded-xl bg-gray-50 px-3 py-2 font-black text-gray-900">
+                        {money(item.price)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-xl bg-gray-950 px-3 py-2 text-white">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold text-gray-300">
+                        សរុបមុខនេះ
+                      </span>
+                      <span className="text-lg font-black">
+                        {money(lineTotal)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-3 text-xs text-gray-400">
+                      <span>
+                        {item.quantity} x {money(item.price)}
+                      </span>
+                      <span>
+                        កាត់ស្តុក {item.quantity * item.conversion_qty}
+                      </span>
                     </div>
                   </div>
                 </div>
-
-                <div className="mt-2 flex justify-between text-sm">
-                  <span className="text-gray-500">
-                    កាត់ស្តុក {item.quantity * item.conversion_qty}
-                  </span>
-                  <span className="font-black text-gray-900">
-                    {money(Number(item.quantity) * Number(item.price))}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

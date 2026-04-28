@@ -57,7 +57,7 @@ function App() {
               </div>
               <div>
                 <h1 className="text-2xl font-black tracking-tight">
-                  GrocyPOS
+                  BN&7POS
                 </h1>
                 <p className="text-sm text-gray-400 mt-0.5">
                   ប្រព័ន្ធលក់ដុំ និងលក់រាយ

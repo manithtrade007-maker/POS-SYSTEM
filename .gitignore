@@ -4,10 +4,16 @@ node_modules/
 # Env files
 .env
 .env.*
+!.env.example
+!**/.env.example
 
 # Build outputs
 dist/
 build/
+
+# SQLite runtime files
+*.db-shm
+*.db-wal
 
 # Logs
 logs

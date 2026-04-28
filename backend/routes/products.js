@@ -3,117 +3,199 @@ const db = require("../database/db");
 
 const router = express.Router();
 
-// Get all active products
+function getActiveUnits(productId) {
+  return db
+    .prepare(
+      `
+        SELECT *
+        FROM product_units
+        WHERE product_id = ? AND active = 1
+        ORDER BY conversion_qty ASC, id ASC
+      `,
+    )
+    .all(productId);
+}
+
+function attachUnits(product) {
+  return {
+    ...product,
+    units: getActiveUnits(product.id),
+  };
+}
+
+function normalizeProductPayload(body) {
+  const name = String(body.name || "").trim();
+  const category = String(body.category || "beer").trim() || "beer";
+  const baseUnit = String(body.base_unit || "").trim();
+  const units = Array.isArray(body.units) ? body.units : [];
+  const costPriceBase = Number(body.cost_price_base ?? 0);
+  const currentStock = Number(body.current_stock ?? 0);
+  const minStock = Number(body.min_stock ?? 0);
+
+  if (!name || !baseUnit) {
+    return { error: "Product name and base unit are required" };
+  }
+
+  if (!Number.isFinite(costPriceBase) || costPriceBase < 0) {
+    return { error: "Cost price must be a valid number" };
+  }
+
+  if (!Number.isFinite(currentStock) || currentStock < 0) {
+    return { error: "Current stock must be a valid number" };
+  }
+
+  if (!Number.isFinite(minStock) || minStock < 0) {
+    return { error: "Minimum stock must be a valid number" };
+  }
+
+  if (units.length === 0) {
+    return { error: "At least one selling unit is required" };
+  }
+
+  const normalizedUnits = [];
+
+  for (const unit of units) {
+    const unitName = String(unit.unit_name || "").trim();
+    const conversionQty = Number(unit.conversion_qty ?? 1);
+    const retailPrice = Number(unit.retail_price ?? 0);
+    const wholesalePrice = Number(unit.wholesale_price ?? 0);
+
+    if (!unitName || !Number.isFinite(conversionQty) || conversionQty <= 0) {
+      return {
+        error: "Each unit must have a name and conversion quantity above 0",
+      };
+    }
+
+    if (
+      !Number.isFinite(retailPrice) ||
+      retailPrice < 0 ||
+      !Number.isFinite(wholesalePrice) ||
+      wholesalePrice < 0
+    ) {
+      return { error: "Unit prices must be valid numbers" };
+    }
+
+    normalizedUnits.push({
+      unit_name: unitName,
+      conversion_qty: conversionQty,
+      retail_price: retailPrice,
+      wholesale_price: wholesalePrice,
+    });
+  }
+
+  return {
+    product: {
+      name,
+      category,
+      category_id: body.category_id || null,
+      base_unit: baseUnit,
+      cost_price_base: costPriceBase,
+      current_stock: currentStock,
+      min_stock: minStock,
+      units: normalizedUnits,
+    },
+  };
+}
+
 router.get("/", (req, res) => {
-  const products = db.prepare(`SELECT * FROM products WHERE active = 1`).all();
+  const products = db
+    .prepare(
+      `
+        SELECT *
+        FROM products
+        WHERE active = 1
+        ORDER BY name COLLATE NOCASE ASC, id ASC
+      `,
+    )
+    .all();
 
-  const result = products.map((product) => {
-    const units = db
-      .prepare(`SELECT * FROM product_units WHERE product_id = ? AND active = 1`)
-      .all(product.id);
-
-    return {
-      ...product,
-      units,
-    };
-  });
-
-  res.json(result);
+  res.json(products.map(attachUnits));
 });
 
-// Get single product
 router.get("/:id", (req, res) => {
   const product = db
-    .prepare(`
-      SELECT 
-        products.*,
-        categories.name AS category_name
-      FROM products
-      LEFT JOIN categories ON products.category_id = categories.id
-      WHERE products.id = ?
-    `)
+    .prepare(
+      `
+        SELECT
+          products.*,
+          categories.name AS category_name
+        FROM products
+        LEFT JOIN categories ON products.category_id = categories.id
+        WHERE products.id = ? AND products.active = 1
+      `,
+    )
     .get(req.params.id);
 
   if (!product) {
     return res.status(404).json({ message: "Product not found" });
   }
 
-  res.json(product);
+  res.json(attachUnits(product));
 });
 
-// Create product
 router.post("/", (req, res) => {
-  const {
-    name,
-    category,
-    category_id,
-    base_unit,
-    cost_price_base,
-    current_stock,
-    min_stock,
-    units,
-  } = req.body;
+  const { product, error } = normalizeProductPayload(req.body);
 
-  if (!name || !base_unit) {
-    return res.status(400).json({ message: "Name and base unit required" });
-  }
-
-  if (!units || units.length === 0) {
-    return res.status(400).json({ message: "At least one unit is required" });
+  if (error) {
+    return res.status(400).json({ message: error });
   }
 
   try {
-    const transaction = db.transaction(() => {
+    const createProduct = db.transaction((payload) => {
       const result = db
-        .prepare(`
-          INSERT INTO products (
-            name,
-            category,
-            category_id,
-            unit,
-            base_unit,
-            cost_price_base,
-            current_stock,
-            min_stock
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `)
+        .prepare(
+          `
+            INSERT INTO products (
+              name,
+              category,
+              category_id,
+              unit,
+              base_unit,
+              cost_price_base,
+              current_stock,
+              min_stock
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
         .run(
-          name,
-          category || "beer",
-          category_id || null,
-          base_unit,
-          base_unit,
-          Number(cost_price_base || 0),
-          Number(current_stock || 0),
-          Number(min_stock || 0)
+          payload.name,
+          payload.category,
+          payload.category_id,
+          payload.base_unit,
+          payload.base_unit,
+          payload.cost_price_base,
+          payload.current_stock,
+          payload.min_stock,
         );
 
       const productId = result.lastInsertRowid;
 
-      for (const unit of units) {
-        db.prepare(`
-          INSERT INTO product_units (
-            product_id,
-            unit_name,
-            conversion_qty,
-            retail_price,
-            wholesale_price
-          )
-          VALUES (?, ?, ?, ?, ?)
-        `).run(
+      for (const unit of payload.units) {
+        db.prepare(
+          `
+            INSERT INTO product_units (
+              product_id,
+              unit_name,
+              conversion_qty,
+              retail_price,
+              wholesale_price
+            )
+            VALUES (?, ?, ?, ?, ?)
+          `,
+        ).run(
           productId,
           unit.unit_name,
-          Number(unit.conversion_qty || 1),
-          Number(unit.retail_price || 0),
-          Number(unit.wholesale_price || 0)
+          unit.conversion_qty,
+          unit.retail_price,
+          unit.wholesale_price,
         );
       }
 
       return productId;
     });
 
-    const productId = transaction();
+    const productId = createProduct(product);
 
     res.status(201).json({
       message: "Product created successfully",
@@ -124,166 +206,115 @@ router.post("/", (req, res) => {
   }
 });
 
-// Update product
-// Update product with units
 router.put("/:id", (req, res) => {
-
-  
-
   const productId = req.params.id;
+  const { product, error } = normalizeProductPayload(req.body);
 
-  const {
-    name,
-    category_id,
-    base_unit,
-    cost_price_base,
-    current_stock,
-    min_stock,
-    units,
-  } = req.body;
+  if (error) {
+    return res.status(400).json({ message: error });
+  }
 
-  const product = db
+  const existingProduct = db
     .prepare("SELECT * FROM products WHERE id = ? AND active = 1")
     .get(productId);
 
-  if (!product) {
+  if (!existingProduct) {
     return res.status(404).json({ message: "Product not found" });
   }
 
-  if (!name || !base_unit) {
-    return res.status(400).json({
-      message: "Product name and base unit are required",
-    });
-  }
-
-  if (!units || !Array.isArray(units) || units.length === 0) {
-    return res.status(400).json({
-      message: "At least one selling unit is required",
-    });
-  }
-
-  for (const unit of units) {
-    if (!unit.unit_name || Number(unit.conversion_qty) <= 0) {
-      return res.status(400).json({
-        message: "Each unit must have unit_name and conversion_qty greater than 0",
-      });
-    }
-  }
-
   try {
-    const transaction = db.transaction(() => {
- db.prepare(`
-  UPDATE products
-  SET
-    name = ?,
-    category = ?,
-    category_id = ?,
-    unit = ?,
-    base_unit = ?,
-    cost_price_base = ?,
-    current_stock = ?,
-    min_stock = ?,
-    updated_at = CURRENT_TIMESTAMP
-  WHERE id = ?
-`).run(
-  name,
-  category || "beer",
-  category_id || null,
-  base_unit,
-  base_unit,
-  Number(cost_price_base || 0),
-  Number(current_stock || 0),
-  Number(min_stock || 0),
-  productId
-);
+    const updateProduct = db.transaction((payload) => {
+      db.prepare(
+        `
+          UPDATE products
+          SET
+            name = ?,
+            category = ?,
+            category_id = ?,
+            unit = ?,
+            base_unit = ?,
+            cost_price_base = ?,
+            current_stock = ?,
+            min_stock = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+      ).run(
+        payload.name,
+        payload.category,
+        payload.category_id,
+        payload.base_unit,
+        payload.base_unit,
+        payload.cost_price_base,
+        payload.current_stock,
+        payload.min_stock,
+        productId,
+      );
 
-      // Soft-disable old units
-      db.prepare(`
-        UPDATE product_units
-        SET active = 0
-        WHERE product_id = ?
-      `).run(productId);
+      db.prepare(
+        `
+          UPDATE product_units
+          SET active = 0
+          WHERE product_id = ?
+        `,
+      ).run(productId);
 
-      // Insert new unit rows
-      for (const unit of units) {
-        db.prepare(`
-          INSERT INTO product_units (
-            product_id,
-            unit_name,
-            conversion_qty,
-            retail_price,
-            wholesale_price,
-            active
-          )
-          VALUES (?, ?, ?, ?, ?, 1)
-        `).run(
+      for (const unit of payload.units) {
+        db.prepare(
+          `
+            INSERT INTO product_units (
+              product_id,
+              unit_name,
+              conversion_qty,
+              retail_price,
+              wholesale_price,
+              active
+            )
+            VALUES (?, ?, ?, ?, ?, 1)
+          `,
+        ).run(
           productId,
           unit.unit_name,
-          Number(unit.conversion_qty || 1),
-          Number(unit.retail_price || 0),
-          Number(unit.wholesale_price || 0)
+          unit.conversion_qty,
+          unit.retail_price,
+          unit.wholesale_price,
         );
       }
     });
 
-    const {
-  name,
-  category,
-  category_id,
-  base_unit,
-  cost_price_base,
-  current_stock,
-  min_stock,
-  units,
-} = req.body;
-
-    transaction();
+    updateProduct(product);
 
     const updatedProduct = db
       .prepare("SELECT * FROM products WHERE id = ?")
       .get(productId);
 
-    const updatedUnits = db
-      .prepare(`
-        SELECT *
-        FROM product_units
-        WHERE product_id = ? AND active = 1
-      `)
-      .all(productId);
-
     res.json({
       message: "Product updated successfully",
-      product: {
-        ...updatedProduct,
-        units: updatedUnits,
-      },
+      product: attachUnits(updatedProduct),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-   
- 
-  
 });
 
-// Disable product instead of deleting
 router.delete("/:id", (req, res) => {
-  const product = db.prepare("SELECT * FROM products WHERE id = ?").get(req.params.id);
+  const product = db
+    .prepare("SELECT * FROM products WHERE id = ? AND active = 1")
+    .get(req.params.id);
 
   if (!product) {
     return res.status(404).json({ message: "Product not found" });
   }
 
-  db.prepare(`
-    UPDATE products
-    SET active = 0, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(req.params.id);
+  db.prepare(
+    `
+      UPDATE products
+      SET active = 0, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `,
+  ).run(req.params.id);
 
   res.json({ message: "Product disabled successfully" });
 });
-
-
-
 
 module.exports = router;

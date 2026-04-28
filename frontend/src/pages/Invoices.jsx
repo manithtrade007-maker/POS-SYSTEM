@@ -24,6 +24,15 @@ function priceTypeLabel(value) {
   return value || "-";
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function datePart(value) {
   return value?.slice(0, 10) || "";
 }
@@ -71,10 +80,6 @@ export default function Invoices() {
 
       const data = await apiRequest("/sales");
       setSales(data);
-
-      if (!selectedInvoiceId && data.length > 0) {
-        viewInvoice(data[0].id);
-      }
     } catch (error) {
       setErrorMessage("បរាជ័យក្នុងការទាញយកវិក្កយបត្រ");
       console.error(error);
@@ -162,7 +167,153 @@ export default function Invoices() {
   }
 
   function printInvoice() {
-    window.print();
+    if (!selectedInvoice) {
+      return;
+    }
+
+    const rows = selectedInvoice.items
+      .map(
+        (item) => `
+          <tr>
+            <td>
+              <strong>${escapeHtml(item.product_name_snapshot)}</strong>
+              <div>${escapeHtml(priceTypeLabel(item.price_type))}</div>
+            </td>
+            <td>${Number(item.quantity)}</td>
+            <td>${money(item.unit_price)}</td>
+            <td>${money(item.total_price)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+    const discount = Number(selectedInvoice.sale.discount || 0);
+    const discountLine =
+      discount > 0
+        ? `
+          <div class="line">
+            <span>បញ្ចុះតម្លៃ</span>
+            <strong>${money(discount)}</strong>
+          </div>
+        `
+        : "";
+    const printWindow = window.open("", "_blank", "width=420,height=720");
+
+    if (!printWindow) {
+      setErrorMessage("Chrome បានទប់ស្កាត់ popup បោះពុម្ព។ សូមអនុញ្ញាត popup សម្រាប់គេហទំព័រនេះ។");
+      return;
+    }
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>${escapeHtml(selectedInvoice.sale.invoice_no)}</title>
+          <style>
+            body {
+              color: #111827;
+              font-family: Arial, "Khmer OS", sans-serif;
+              margin: 24px;
+            }
+            .center { text-align: center; }
+            .muted { color: #6b7280; font-size: 12px; }
+            .invoice {
+              font-size: 18px;
+              font-weight: 800;
+              margin-top: 8px;
+            }
+            table {
+              border-collapse: collapse;
+              margin-top: 18px;
+              width: 100%;
+            }
+            th {
+              border-bottom: 1px solid #e5e7eb;
+              color: #6b7280;
+              font-size: 12px;
+              padding: 8px 0;
+              text-align: left;
+            }
+            td {
+              border-bottom: 1px solid #f3f4f6;
+              font-size: 12px;
+              padding: 10px 0;
+              vertical-align: top;
+            }
+            td:nth-child(2),
+            td:nth-child(3),
+            td:nth-child(4),
+            th:nth-child(2),
+            th:nth-child(3),
+            th:nth-child(4) {
+              text-align: right;
+            }
+            .summary {
+              display: grid;
+              gap: 8px;
+              margin-top: 18px;
+            }
+            .line {
+              display: flex;
+              font-size: 14px;
+              justify-content: space-between;
+            }
+            .total {
+              border-top: 1px solid #e5e7eb;
+              font-size: 22px;
+              font-weight: 900;
+              padding-top: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <h2>BN&7POS</h2>
+            <div class="muted">ប្រព័ន្ធលក់ដុំ និងលក់រាយ</div>
+            <div class="invoice">${escapeHtml(selectedInvoice.sale.invoice_no)}</div>
+            <div class="muted">
+              ${escapeHtml(selectedInvoice.sale.sale_date)} |
+              ${escapeHtml(paymentLabel(selectedInvoice.sale.payment_method))}
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>ទំនិញ</th>
+                <th>ចំនួន</th>
+                <th>តម្លៃ</th>
+                <th>សរុប</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+
+          <div class="summary">
+            <div class="line">
+              <span>ចំនួនមុខ</span>
+              <strong>${selectedInvoice.items.length}</strong>
+            </div>
+            <div class="line">
+              <span>សរុបរង</span>
+              <strong>${money(selectedInvoice.sale.subtotal)}</strong>
+            </div>
+            ${discountLine}
+            <div class="line total">
+              <span>សរុបត្រូវបង់</span>
+              <span>${money(selectedInvoice.sale.total)}</span>
+            </div>
+          </div>
+
+          <p class="center muted">អរគុណសម្រាប់ការទិញ</p>
+          <script>
+            window.onload = () => {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   }
 
   return (
