@@ -1,5 +1,6 @@
 const express = require("express");
 const db = require("../database/db");
+const { sendSaleAlert } = require("../services/telegram");
 
 const router = express.Router();
 
@@ -151,6 +152,7 @@ router.post("/", (req, res) => {
         );
 
       const saleId = saleResult.lastInsertRowid;
+      const soldItems = [];
 
       for (const item of checkedItems) {
         const oldStock = Number(item.product.current_stock);
@@ -215,6 +217,19 @@ router.post("/", (req, res) => {
           saleId,
           `Sold ${item.quantity} ${item.unit.unit_name} in invoice ${invoiceNo}`
         );
+
+        soldItems.push({
+          product_id: item.product.id,
+          product_name: item.product.name,
+          unit_name: item.unit.unit_name,
+          quantity: item.quantity,
+          price_type: item.price_type,
+          unit_price: item.unitPrice,
+          total_price: item.totalPrice,
+          stock_deducted: item.stockToDeduct,
+          remaining_stock: newStock,
+          base_unit: item.product.base_unit || item.product.unit,
+        });
       }
 
       return {
@@ -226,14 +241,21 @@ router.post("/", (req, res) => {
         total,
         profit: totalProfit,
         payment_method,
+        items: soldItems,
       };
     });
 
     const result = transaction();
+    const sale = { ...result };
+    delete sale.items;
+
+    sendSaleAlert(result).catch((error) => {
+      console.error("Telegram sale alert failed:", error.message);
+    });
 
     res.status(201).json({
       message: "Sale created successfully",
-      sale: result,
+      sale,
     });
   } catch (error) {
     res.status(400).json({
